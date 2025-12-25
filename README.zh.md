@@ -140,6 +140,10 @@ kiro-doc-sync -i -c ./sync.cfg.json
 - **型別**: `string[]`
 - **必需**: 是
 - **說明**: 要同步的文件模式陣列（相對於倉庫根目錄）
+- **支援三種模式**：
+  - **精確檔案**: `"php/di.md"` - 同步單個檔案
+  - **Glob 模式**: `"java/springboot/steering/*.global.md"` - 同步所有匹配的檔案
+  - **目錄**: `"java/springboot/steering/"` - 遞迴同步目錄中的所有檔案
 
 #### `docs[].branch`
 
@@ -167,7 +171,11 @@ kiro-doc-sync -i -c ./sync.cfg.json
   "docs": [
     {
       "git": "https://github.com/myorg/docs.git",
-      "steering": ["api/reference.md", "guides/*.md"]
+      "steering": [
+        "api/reference.md",
+        "guides/*.md",
+        "patterns/"
+      ]
     }
   ]
 }
@@ -190,7 +198,11 @@ kiro-doc-sync -i -c ./sync.cfg.json
     },
     {
       "git": "https://github.com/myorg/guides.git",
-      "steering": ["php/di.md", "patterns/*.md"],
+      "steering": [
+        "php/di.md",
+        "patterns/*.md",
+        "standards/"
+      ],
       "tag": "v1.0.0"
     }
   ]

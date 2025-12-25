@@ -57,10 +57,18 @@ export class GitSync {
       await repoGit.raw(['config', 'core.sparseCheckout', 'true']);
       
       // Build sparse-checkout patterns
-      // Include parent directories for glob patterns
+      // For glob patterns, we need to include the directory
       const sparsePatterns = new Set<string>();
       for (const pattern of patterns) {
-        sparsePatterns.add(pattern);
+        if (pattern.includes('*')) {
+          // For glob patterns, add the directory containing the pattern
+          const dir = pattern.substring(0, pattern.lastIndexOf('/'));
+          sparsePatterns.add(dir);
+        } else {
+          // For exact files, add the file itself
+          sparsePatterns.add(pattern);
+        }
+        
         // Add parent directories to ensure they're checked out
         const parts = pattern.split('/');
         for (let i = 1; i < parts.length; i++) {
@@ -84,8 +92,7 @@ export class GitSync {
           // Check if it's a glob pattern
           if (pattern.includes('*')) {
             // Handle glob pattern
-            const globPattern = filePath;
-            const files = this.globSync(globPattern);
+            const files = this.globSync(filePath);
             
             if (files.length === 0) {
               errors.push(`No files matching pattern: ${pattern}`);
@@ -95,17 +102,31 @@ export class GitSync {
             
             for (const file of files) {
               await this.copyFile(file, targetDir, pattern, syncOverride);
+            }
+            synced.push(pattern);
+          } else if (fs.existsSync(filePath)) {
+            // Check if it's a directory
+            const stats = fs.statSync(filePath);
+            if (stats.isDirectory()) {
+              // Handle directory - sync all files in it
+              const files = this.getAllFiles(filePath);
+              if (files.length === 0) {
+                console.log(`⊘ Empty directory: ${pattern}`);
+                continue;
+              }
+              
+              for (const file of files) {
+                await this.copyFile(file, targetDir, pattern, syncOverride);
+              }
+              synced.push(pattern);
+            } else {
+              // Handle exact file path
+              await this.copyFile(filePath, targetDir, pattern, syncOverride);
               synced.push(pattern);
             }
           } else {
-            // Handle exact file path
-            if (fs.existsSync(filePath)) {
-              await this.copyFile(filePath, targetDir, pattern, syncOverride);
-              synced.push(pattern);
-            } else {
-              errors.push(`File not found in repo: ${pattern}`);
-              console.warn(`✗ Not found: ${pattern}`);
-            }
+            errors.push(`File or directory not found in repo: ${pattern}`);
+            console.warn(`✗ Not found: ${pattern}`);
           }
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
@@ -122,12 +143,36 @@ export class GitSync {
   }
 
   private globSync(pattern: string): string[] {
-    const glob = require('glob');
     try {
+      const glob = require('glob');
       return glob.sync(pattern);
-    } catch {
+    } catch (err) {
+      console.warn(`Warning: glob pattern failed for ${pattern}`);
       return [];
     }
+  }
+
+  private getAllFiles(dirPath: string): string[] {
+    const files: string[] = [];
+    
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        
+        if (entry.isDirectory()) {
+          // Recursively get files from subdirectories
+          files.push(...this.getAllFiles(fullPath));
+        } else if (entry.isFile()) {
+          files.push(fullPath);
+        }
+      }
+    } catch (err) {
+      console.warn(`Warning: could not read directory ${dirPath}`);
+    }
+    
+    return files;
   }
 
   private async copyFile(

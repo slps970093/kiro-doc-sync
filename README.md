@@ -140,6 +140,10 @@ Create `kiro-doc-sync.cfg.json` in your project root:
 - **Type**: `string[]`
 - **Required**: Yes
 - **Description**: Array of file patterns to sync from the repository (relative to repo root)
+- **Supports three modes**:
+  - **Exact file**: `"php/di.md"` - Syncs a single file
+  - **Glob pattern**: `"java/springboot/steering/*.global.md"` - Syncs all matching files
+  - **Directory**: `"java/springboot/steering/"` - Recursively syncs all files in the directory
 
 #### `docs[].branch`
 
@@ -167,7 +171,11 @@ Create `kiro-doc-sync.cfg.json` in your project root:
   "docs": [
     {
       "git": "https://github.com/myorg/docs.git",
-      "steering": ["api/reference.md", "guides/*.md"]
+      "steering": [
+        "api/reference.md",
+        "guides/*.md",
+        "patterns/"
+      ]
     }
   ]
 }
@@ -190,7 +198,11 @@ Create `kiro-doc-sync.cfg.json` in your project root:
     },
     {
       "git": "https://github.com/myorg/guides.git",
-      "steering": ["php/di.md", "patterns/*.md"],
+      "steering": [
+        "php/di.md",
+        "patterns/*.md",
+        "standards/"
+      ],
       "tag": "v1.0.0"
     }
   ]
