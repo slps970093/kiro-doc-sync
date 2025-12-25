@@ -32,7 +32,9 @@ export class DocSync {
             docSource.git,
             docSource.steering,
             this.steeringDir,
-            syncOverride
+            syncOverride,
+            docSource.branch,
+            docSource.tag
           );
 
           allSynced.push(...synced);

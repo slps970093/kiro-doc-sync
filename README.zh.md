@@ -141,6 +141,18 @@ kiro-doc-sync -i -c ./sync.cfg.json
 - **必需**: 是
 - **說明**: 要同步的文件模式陣列（相對於倉庫根目錄）
 
+#### `docs[].branch`
+
+- **型別**: `string`
+- **必需**: 否
+- **說明**: 要同步的 Git 分支（預設：預設分支）
+
+#### `docs[].tag`
+
+- **型別**: `string`
+- **必需**: 否
+- **說明**: 要同步的 Git 標籤（優先於分支）
+
 ### 配置範例
 
 **簡單的單一倉庫配置：**
@@ -173,11 +185,13 @@ kiro-doc-sync -i -c ./sync.cfg.json
   "docs": [
     {
       "git": "https://github.com/myorg/api-docs.git",
-      "steering": ["api/*.md"]
+      "steering": ["api/*.md"],
+      "branch": "develop"
     },
     {
       "git": "https://github.com/myorg/guides.git",
-      "steering": ["php/di.md", "patterns/*.md"]
+      "steering": ["php/di.md", "patterns/*.md"],
+      "tag": "v1.0.0"
     }
   ]
 }

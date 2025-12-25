@@ -1,6 +1,6 @@
 {
   "name": "kiro-doc-sync",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI tool to sync Kiro documentation files from remote Git repositories",
   "main": "dist/index.js",
   "bin": {
@@ -44,6 +44,7 @@
   ],
   "dependencies": {
     "commander": "^11.0.0",
+    "glob": "^10.0.0",
     "simple-git": "^3.20.0"
   },
   "devDependencies": {

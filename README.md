@@ -141,6 +141,18 @@ Create `kiro-doc-sync.cfg.json` in your project root:
 - **Required**: Yes
 - **Description**: Array of file patterns to sync from the repository (relative to repo root)
 
+#### `docs[].branch`
+
+- **Type**: `string`
+- **Required**: No
+- **Description**: Git branch to sync from (default: default branch)
+
+#### `docs[].tag`
+
+- **Type**: `string`
+- **Required**: No
+- **Description**: Git tag to sync from (takes precedence over branch)
+
 ### Example Configurations
 
 **Simple single repository:**
@@ -173,11 +185,13 @@ Create `kiro-doc-sync.cfg.json` in your project root:
   "docs": [
     {
       "git": "https://github.com/myorg/api-docs.git",
-      "steering": ["api/*.md"]
+      "steering": ["api/*.md"],
+      "branch": "develop"
     },
     {
       "git": "https://github.com/myorg/guides.git",
-      "steering": ["php/di.md", "patterns/*.md"]
+      "steering": ["php/di.md", "patterns/*.md"],
+      "tag": "v1.0.0"
     }
   ]
 }

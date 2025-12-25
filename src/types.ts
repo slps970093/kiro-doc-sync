@@ -10,6 +10,8 @@ export interface SyncConfig {
 export interface DocSource {
   git: string;
   steering: string[];
+  branch?: string;
+  tag?: string;
 }
 
 export interface SyncResult {
