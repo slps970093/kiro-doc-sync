@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import simpleGit, { SimpleGit } from 'simple-git';
 import { Prompt } from './prompt';
+import { Logger } from './logger';
 
 export class GitSync {
   private tempDir: string;
@@ -29,109 +30,29 @@ export class GitSync {
     const errors: string[] = [];
 
     try {
-      // Create temp directory
       if (!fs.existsSync(this.tempDir)) {
         fs.mkdirSync(this.tempDir, { recursive: true });
       }
 
       const repoDir = path.join(this.tempDir, 'repo');
-
-      // Initialize repo with sparse-checkout
       const ref = tag || branch || 'HEAD';
-      console.log(`Cloning ${gitUrl} (${ref}) with sparse-checkout...`);
-      const git = simpleGit();
-      
-      // Build clone options
-      const cloneOptions = ['--depth', '1', '--no-checkout'];
-      if (branch) {
-        cloneOptions.push('--branch', branch);
-      } else if (tag) {
-        cloneOptions.push('--branch', tag);
-      }
-      
-      // Clone with no-checkout
-      await git.clone(gitUrl, repoDir, cloneOptions);
-      
-      // Configure sparse-checkout
-      const repoGit = simpleGit(repoDir);
-      await repoGit.raw(['config', 'core.sparseCheckout', 'true']);
-      
-      // Build sparse-checkout patterns
-      // For glob patterns, we need to include the directory
-      const sparsePatterns = new Set<string>();
-      for (const pattern of patterns) {
-        if (pattern.includes('*')) {
-          // For glob patterns, add the directory containing the pattern
-          const dir = pattern.substring(0, pattern.lastIndexOf('/'));
-          sparsePatterns.add(dir);
-        } else {
-          // For exact files, add the file itself
-          sparsePatterns.add(pattern);
-        }
-        
-        // Add parent directories to ensure they're checked out
-        const parts = pattern.split('/');
-        for (let i = 1; i < parts.length; i++) {
-          sparsePatterns.add(parts.slice(0, i).join('/'));
-        }
-      }
-      
-      // Write sparse-checkout patterns
-      const sparseCheckoutPath = path.join(repoDir, '.git', 'info', 'sparse-checkout');
-      fs.mkdirSync(path.dirname(sparseCheckoutPath), { recursive: true });
-      fs.writeFileSync(sparseCheckoutPath, Array.from(sparsePatterns).join('\n'), 'utf-8');
-      
-      // Checkout with sparse-checkout
-      await repoGit.checkout();
+      Logger.info(`Cloning ${gitUrl} (${ref})...`);
 
-      // Process each pattern - handle glob patterns
+      const cloneOptions = ['--depth', '1'];
+      if (branch) cloneOptions.push('--branch', branch);
+      if (tag) cloneOptions.push('--branch', tag);
+
+      await simpleGit().clone(gitUrl, repoDir, cloneOptions);
+
+      // Process each pattern
       for (const pattern of patterns) {
         try {
           const filePath = path.join(repoDir, pattern);
-          
-          // Check if it's a glob pattern
-          if (pattern.includes('*')) {
-            // Handle glob pattern
-            const files = this.globSync(filePath);
-            
-            if (files.length === 0) {
-              errors.push(`No files matching pattern: ${pattern}`);
-              console.warn(`✗ No files matching: ${pattern}`);
-              continue;
-            }
-            
-            for (const file of files) {
-              await this.copyFile(file, targetDir, pattern, syncOverride);
-            }
-            synced.push(pattern);
-          } else if (fs.existsSync(filePath)) {
-            // Check if it's a directory
-            const stats = fs.statSync(filePath);
-            if (stats.isDirectory()) {
-              // Handle directory - sync all files in it
-              const files = this.getAllFiles(filePath);
-              if (files.length === 0) {
-                console.log(`⊘ Empty directory: ${pattern}`);
-                continue;
-              }
-              
-              for (const file of files) {
-                await this.copyFile(file, targetDir, pattern, syncOverride);
-              }
-              synced.push(pattern);
-            } else {
-              // Handle exact file path
-              await this.copyFile(filePath, targetDir, pattern, syncOverride);
-              synced.push(pattern);
-            }
-          } else {
-            errors.push(`File or directory not found in repo: ${pattern}`);
-            console.warn(`✗ Not found: ${pattern}`);
-          }
+          await this.processPattern(pattern, filePath, targetDir, syncOverride, synced, errors);
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           errors.push(`Error syncing ${pattern}: ${errorMsg}`);
-          console.error(`✗ Error syncing ${pattern}: ${errorMsg}`);
+          Logger.error(`Error syncing ${pattern}: ${errorMsg}`);
         }
       }
     } catch (err) {
@@ -142,37 +63,85 @@ export class GitSync {
     return { synced, errors };
   }
 
-  private globSync(pattern: string): string[] {
-    try {
-      const glob = require('glob');
-      return glob.sync(pattern);
-    } catch (err) {
-      console.warn(`Warning: glob pattern failed for ${pattern}`);
-      return [];
+  private async processPattern(
+    pattern: string,
+    filePath: string,
+    targetDir: string,
+    syncOverride: boolean,
+    synced: string[],
+    errors: string[]
+  ): Promise<void> {
+    if (pattern.includes('*')) {
+      await this.processGlobPattern(pattern, filePath, targetDir, syncOverride, synced, errors);
+    } else if (fs.existsSync(filePath)) {
+      const stats = fs.statSync(filePath);
+      if (stats.isDirectory()) {
+        await this.processDirectory(pattern, filePath, targetDir, syncOverride, synced, errors);
+      } else {
+        await this.processFile(pattern, filePath, targetDir, syncOverride, synced, errors);
+      }
+    } else {
+      errors.push(`File or directory not found in repo: ${pattern}`);
+      Logger.warn(`Not found: ${pattern}`);
     }
   }
 
-  private getAllFiles(dirPath: string): string[] {
-    const files: string[] = [];
-    
-    try {
-      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        const fullPath = path.join(dirPath, entry.name);
-        
-        if (entry.isDirectory()) {
-          // Recursively get files from subdirectories
-          files.push(...this.getAllFiles(fullPath));
-        } else if (entry.isFile()) {
-          files.push(fullPath);
-        }
-      }
-    } catch (err) {
-      console.warn(`Warning: could not read directory ${dirPath}`);
+  private async processGlobPattern(
+    pattern: string,
+    filePath: string,
+    targetDir: string,
+    syncOverride: boolean,
+    synced: string[],
+    errors: string[]
+  ): Promise<void> {
+    const files = this.globSync(filePath);
+
+    Logger.info(`Glob pattern: ${pattern}`);
+    Logger.info(`  Found ${files.length} file(s)`);
+
+    if (files.length === 0) {
+      errors.push(`No files matching pattern: ${pattern}`);
+      Logger.warn(`No files matching: ${pattern}`);
+      return;
     }
-    
-    return files;
+
+    for (const file of files) {
+      await this.copyFile(file, targetDir, pattern, syncOverride);
+    }
+    synced.push(pattern);
+  }
+
+  private async processDirectory(
+    pattern: string,
+    filePath: string,
+    targetDir: string,
+    syncOverride: boolean,
+    synced: string[],
+    errors: string[]
+  ): Promise<void> {
+    const files = this.getAllFiles(filePath);
+
+    if (files.length === 0) {
+      Logger.skip(`Empty directory: ${pattern}`);
+      return;
+    }
+
+    for (const file of files) {
+      await this.copyFile(file, targetDir, pattern, syncOverride);
+    }
+    synced.push(pattern);
+  }
+
+  private async processFile(
+    pattern: string,
+    filePath: string,
+    targetDir: string,
+    syncOverride: boolean,
+    synced: string[],
+    errors: string[]
+  ): Promise<void> {
+    await this.copyFile(filePath, targetDir, pattern, syncOverride);
+    synced.push(pattern);
   }
 
   private async copyFile(
@@ -184,18 +153,17 @@ export class GitSync {
     const fileName = path.basename(filePath);
     const targetPath = path.join(targetDir, fileName);
 
-    // Check if file exists and sync_override is false
     if (fs.existsSync(targetPath) && !syncOverride) {
       if (this.interactive) {
         const shouldOverride = await this.prompt.confirm(
           `File already exists: ${fileName}. Overwrite?`
         );
         if (!shouldOverride) {
-          console.log(`⊘ Skipped (exists): ${pattern}`);
+          Logger.skip(`Skipped (exists): ${pattern}`);
           return;
         }
       } else {
-        console.log(`⊘ Skipped (exists): ${pattern}`);
+        Logger.skip(`Skipped (exists): ${pattern}`);
         return;
       }
     }
@@ -204,7 +172,42 @@ export class GitSync {
     fs.mkdirSync(path.dirname(targetPath), { recursive: true });
     fs.writeFileSync(targetPath, content, 'utf-8');
 
-    console.log(`✓ Synced: ${pattern}`);
+    Logger.success(`Synced: ${pattern}`);
+  }
+
+  private globSync(pattern: string): string[] {
+    try {
+      const glob = require('glob');
+      const normalizedPattern = pattern.replace(/\\/g, '/');
+      const results = glob.sync(normalizedPattern);
+      return results.map((r: string) => path.resolve(r));
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`Warning: glob pattern failed for ${pattern}`);
+      return [];
+    }
+  }
+
+  private getAllFiles(dirPath: string): string[] {
+    const files: string[] = [];
+
+    try {
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+
+        if (entry.isDirectory()) {
+          files.push(...this.getAllFiles(fullPath));
+        } else if (entry.isFile()) {
+          files.push(fullPath);
+        }
+      }
+    } catch (err) {
+      Logger.warn(`Could not read directory ${dirPath}`);
+    }
+
+    return files;
   }
 
   async cleanup(): Promise<void> {

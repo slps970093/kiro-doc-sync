@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { loadConfig } from './config';
 import { DocSync } from './sync';
+import { Logger } from './logger';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -21,42 +22,38 @@ program
     try {
       const { config: configPath, project: projectRoot, interactive } = options;
 
-      console.log(`Project root: ${projectRoot}`);
-      console.log(`Config file: ${configPath}`);
+      Logger.section('Kiro Doc Sync');
+      Logger.info(`Project root: ${projectRoot}`);
+      Logger.info(`Config file: ${configPath}`);
       if (interactive) {
-        console.log('Mode: Interactive');
+        Logger.info('Mode: Interactive');
       }
-      console.log();
 
       // Load configuration
-      console.log('Loading configuration...');
+      Logger.info('Loading configuration...');
       const config = loadConfig(projectRoot, configPath);
-      console.log(`Found ${config.docs.length} doc source(s)\n`);
+      Logger.success(`Found ${config.docs.length} doc source(s)`);
 
       // Perform sync
       const docSync = new DocSync(projectRoot, interactive);
       const result = await docSync.sync(config);
 
       // Output results
-      console.log('\n' + '='.repeat(50));
-      console.log(result.message);
+      Logger.section(result.success ? 'Sync Completed' : 'Sync Failed');
+      Logger.result(result.success, result.message);
 
       if (result.synced && result.synced.length > 0) {
-        console.log('\nSynced files:');
-        result.synced.forEach((file) => console.log(`  • ${file}`));
+        Logger.summary('Synced files', result.synced.map(f => `• ${f}`));
       }
 
       if (result.errors && result.errors.length > 0) {
-        console.log('\nErrors:');
-        result.errors.forEach((error) => console.log(`  ✗ ${error}`));
+        Logger.summary('Errors', result.errors.map(e => `✗ ${e}`));
       }
-
-      console.log('='.repeat(50));
 
       process.exit(result.success ? 0 : 1);
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      console.error(`Fatal error: ${errorMsg}`);
+      Logger.error(`Fatal error: ${errorMsg}`);
       process.exit(1);
     }
   });
